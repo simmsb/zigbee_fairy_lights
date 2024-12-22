@@ -3,3 +3,7 @@
 /.direnv
 /.DS_Store
 **/*.uf2
+/managed_components/
+/build/
+/.cache/
+/.esphome/

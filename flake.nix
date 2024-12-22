@@ -1,7 +1,8 @@
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    esp.url = "github:mirrexagon/nixpkgs-esp-dev";
+    # esp.url = "github:mirrexagon/nixpkgs-esp-dev";
+    esp.url = "github:quentinmit/nixpkgs-esp-dev?ref=tools";
     esp.inputs.nixpkgs.follows = "nixpkgs";
 
     parts.url = "github:hercules-ci/flake-parts";
@@ -19,7 +20,15 @@
       ];
       perSystem = { config, pkgs, system, lib, ... }:
       {
-        devShells.default = inputs.esp.devShells.${system}.esp32c6-idf;
+        devShells.default = pkgs.mkShell {
+          name = "esp-idf-esp32c6-shell";
+
+          buildInputs = with pkgs; [
+            inputs.esp.packages.${system}.esp-idf-esp32c6
+          ];
+
+          IDF_PACKAGE = inputs.esp.packages.${system}.esp-idf-esp32c6;
+        };
       };
   };
 }

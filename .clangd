@@ -1,0 +1,12 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add: [
+    # -I/nix/store/0mjkx2zcq2wzd1wqx2d6xfb2mcvhg074-libcxx-16.0.6-dev/include/c++/v1,
+    -I/nix/store/8mp037rlysvdg9nblbw9fpwxb32v90s0-riscv32-esp-elf-esp-idf-v5.3.1/riscv32-esp-elf/include/c++/13.2.0/,
+    -I/nix/store/8mp037rlysvdg9nblbw9fpwxb32v90s0-riscv32-esp-elf-esp-idf-v5.3.1/lib/gcc/riscv32-esp-elf/13.2.0/include,
+    -I/nix/store/8mp037rlysvdg9nblbw9fpwxb32v90s0-riscv32-esp-elf-esp-idf-v5.3.1/riscv32-esp-elf/include/c++/13.2.0/riscv32-esp-elf,
+    # -I/nix/store/423v6liin47582qrzimwxclgjdyv0ih9-riscv32-esp-elf-esp-idf-v5.3.1/riscv32-esp-elf/riscv32-esp-elf/include
+    # -I/nix/store/423v6liin47582qrzimwxclgjdyv0ih9-riscv32-esp-elf-esp-idf-v5.3.1/riscv32-esp-elf/riscv32-esp-elf/include
+  ]
+  # Add: [-I /nix/store/0mjkx2zcq2wzd1wqx2d6xfb2mcvhg074-libcxx-16.0.6-dev/include]
+  Remove: [-m*, -f*, -r2 -DSOC_MMU_PAGE_SIZE=Cra, --target*, --driver-mode=*, -resource-dir, --]
