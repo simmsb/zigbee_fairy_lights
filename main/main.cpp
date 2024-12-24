@@ -12,10 +12,12 @@
 #include "utils/gpio_binary_output.h"
 #include "utils/isr_gpio.h"
 #include "utils/ledc.h"
+#include "zcl/esp_zigbee_zcl_analog_output.h"
 #include "zcl/esp_zigbee_zcl_common.h"
 #include "zigbee/zigbee.h"
 #include "zigbee/zigbee_attribute.h"
 #include "zigbee/zigbee_trigger.h"
+#include <cmath>
 #include <cstdint>
 
 static const char *TAG = "LIGHTS";
@@ -103,9 +105,11 @@ void ledUpdateTask(void *arg) {
     int direction = (level < desiredLevel) ? 1 : -1;
     for (size_t i = level, iEnd = desiredLevel + direction; i != iEnd;
          i += direction) {
-      ledOutput->set_level((float)i / 255.0);
+      auto preGamma = (float)i / 255.0;
+      auto gammaCorrected = std::pow(preGamma, 2.8);
+      ledOutput->set_level(gammaCorrected);
 
-      vTaskDelay(pdMS_TO_TICKS(32));
+      vTaskDelay(pdMS_TO_TICKS(16));
     }
 
     level = desiredLevel;
@@ -127,6 +131,7 @@ float interp_linear(float value, std::vector<std::array<float, 3>> filter) {
 }
 
 zigbee::ZigBeeAttribute *power_cfg_battery_remaining;
+zigbee::ZigBeeAttribute *adc_raw;
 
 void batteryUpdateTask(void *arg) {
   std::vector<std::array<float, 3>> filt = {
@@ -137,7 +142,9 @@ void batteryUpdateTask(void *arg) {
       {111.11111111111128f, -366.6666666666674f, NAN}};
 
   for (;;) {
-    auto r = interp_linear(batteryADC->sample() * 2.0, filt);
+    batteryADC->setup();
+    float s = batteryADC->sample();
+    auto r = interp_linear(s, filt);
 
     if (r > 100.0) {
       r = 100.0;
@@ -145,11 +152,12 @@ void batteryUpdateTask(void *arg) {
       r = 0.0;
     }
 
-    uint8_t value = r * (200.0 / 100.0);
+    uint8_t value = (uint8_t)(r * (200.0 / 100.0));
 
-    ESP_LOGI(TAG, "Ticking adc, got: %d", value);
+    ESP_LOGI(TAG, "Ticking adc, got: %d (raw %f)", value, s);
 
     power_cfg_battery_remaining->set_attr(&value);
+    adc_raw->set_attr(&s);
 
     vTaskDelay(pdMS_TO_TICKS(1000 * 60));
   }
@@ -244,6 +252,16 @@ extern "C" void app_main(void) {
       ZB_ZCL_ATTR_POWER_CONFIG_BATTERY_SIZE_ID, ::ESP_ZB_ZCL_ATTR_TYPE_U8);
   power_cfg_battery_size->add_attr(0,
                                    ZB_ZCL_POWER_CONFIG_BATTERY_SIZE_BUILT_IN);
+
+  zb->add_cluster(1, ::ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+                  ::ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+  adc_raw = new zigbee::ZigBeeAttribute(
+      zb, 1, ::ESP_ZB_ZCL_CLUSTER_ID_ANALOG_OUTPUT,
+      ::ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+      ESP_ZB_ZCL_ATTR_ANALOG_OUTPUT_PRESENT_VALUE_ID,
+      ::ESP_ZB_ZCL_ATTR_TYPE_SINGLE);
+  adc_raw->add_attr(0, (float)0.0);
+  adc_raw->set_report();
 
   xTaskCreate(batteryUpdateTask, "batteryUpdate", 4096, NULL, 10, NULL);
 
