@@ -84,6 +84,8 @@ public:
   /// @return The sampled value as a float.
   float sample();
 
+  ~ADCSensor();
+
 #ifdef USE_ESP32
 #if true
   /// Set the ADC attenuation level to adjust the input voltage range.

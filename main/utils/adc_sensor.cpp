@@ -1,4 +1,5 @@
 #include "adc_sensor.h"
+#include "esp_adc/adc_oneshot.h"
 #include <cmath>
 #include <esp_log.h>
 
@@ -7,9 +8,6 @@
 namespace adc {
 
 static const char *const TAG = "adc.esp32";
-
-adc_oneshot_unit_handle_t ADCSensor::shared_adc1_handle = nullptr;
-adc_oneshot_unit_handle_t ADCSensor::shared_adc2_handle = nullptr;
 
 void ADCSensor::setup() {
   ESP_LOGI(TAG, "Setting up ADC ");
@@ -25,11 +23,6 @@ void ADCSensor::setup() {
 
   if (this->is_adc1_) {
     if (this->adc1_handle_ == nullptr) {
-      // Check if another sensor already initialized ADC1
-      if (shared_adc1_handle != nullptr) {
-        this->adc1_handle_ = shared_adc1_handle;
-        this->handle_init_complete_ = true;
-      } else {
         adc_oneshot_unit_init_cfg_t init_config1 = {};
         init_config1.unit_id = ADC_UNIT_1;
         init_config1.ulp_mode = ADC_ULP_MODE_DISABLE;
@@ -45,9 +38,7 @@ void ADCSensor::setup() {
           this->handle_init_complete_ = false;
           return;
         }
-        shared_adc1_handle = this->adc1_handle_;
         this->handle_init_complete_ = true;
-      }
     }
 
     adc_oneshot_chan_cfg_t config = {
@@ -66,10 +57,6 @@ void ADCSensor::setup() {
   } else {
     if (this->adc2_handle_ == nullptr) {
       // Check if another sensor already initialized ADC2
-      if (shared_adc2_handle != nullptr) {
-        this->adc2_handle_ = shared_adc2_handle;
-        this->handle_init_complete_ = true;
-      } else {
         adc_oneshot_unit_init_cfg_t init_config2 = {};
         init_config2.unit_id = ADC_UNIT_2;
         init_config2.ulp_mode = ADC_ULP_MODE_DISABLE;
@@ -85,9 +72,7 @@ void ADCSensor::setup() {
           this->handle_init_complete_ = false;
           return;
         }
-        shared_adc2_handle = this->adc2_handle_;
         this->handle_init_complete_ = true;
-      }
     }
 
     adc_oneshot_chan_cfg_t config = {
@@ -159,6 +144,16 @@ void ADCSensor::setup() {
 
   this->init_complete_ = true;
   this->do_setup_ = false;
+}
+
+ADCSensor::~ADCSensor() {
+  if (this->adc1_handle_ != nullptr) {
+    adc_oneshot_del_unit(this->adc1_handle_);
+  }
+
+  if (this->adc2_handle_ != nullptr) {
+    adc_oneshot_del_unit(this->adc2_handle_);
+  }
 }
 
 void ADCSensor::set_sample_count(uint8_t sample_count) {

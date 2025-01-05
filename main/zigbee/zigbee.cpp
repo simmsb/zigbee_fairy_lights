@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 
+#include "../opt/optional.hpp"
 #include "driver/rtc_io.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -24,7 +25,15 @@ ZigBeeComponent *zigbeeC;
 
 device_params_t coord;
 
+
+
 /********************* Define functions **************************/
+
+ZigbeeWakelock::~ZigbeeWakelock() {
+  if (!live)
+    return;
+  zigbeeC->allow_sleep();
+};
 
 extern "C" void zb_set_ed_node_descriptor(bool power_src, bool rx_on_when_idle,
                                           bool alloc_addr);
@@ -232,6 +241,8 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct) {
       ESP_LOGI(TAG, "Zigbee can sleep, %d, %s", err_status,
                esp_err_to_name(err_status));
       esp_zb_sleep_now();
+    } else {
+      ESP_LOGI(TAG, "Zigbee not sleeping: %d", (int)zigbeeC->sleep_level());
     }
     break;
   default:
@@ -493,8 +504,15 @@ void ZigBeeComponent::setup() {
       "Zigbee_main", 4096, this, 24, NULL);
 }
 
-void inhibit_sleep() { zigbeeC->inhibit_sleep(); }
-void allow_sleep() { zigbeeC->allow_sleep(); }
+tl::optional<ZigbeeWakelock> inhibit_sleep() {
+  if (zigbeeC) {
+    zigbeeC->inhibit_sleep();
+    ZigbeeWakelock x = ZigbeeWakelock::unsafeCtor();
+    return x;
+  }
+
+  return {};
+}
 
 // void ZigBeeComponent::dump_config() {
 //   ESP_LOGCONFIG(TAG, "ZigBee:");

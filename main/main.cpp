@@ -1,3 +1,6 @@
+#include <cmath>
+#include <cstdint>
+
 #include "esp_log.h"
 #include "esp_zigbee_type.h"
 #include "freertos/projdefs.h"
@@ -17,8 +20,7 @@
 #include "zigbee/zigbee.h"
 #include "zigbee/zigbee_attribute.h"
 #include "zigbee/zigbee_trigger.h"
-#include <cmath>
-#include <cstdint>
+#include "opt/optional.hpp"
 
 static const char *TAG = "LIGHTS";
 
@@ -77,6 +79,8 @@ void ledUpdateTask(void *arg) {
   uint8_t level = 0;
   uint8_t savedLevel = 0;
 
+  tl::optional<zigbee::ZigbeeWakelock> wakelock = tl::nullopt;
+
   for (;;) {
     SetLedState newStateSet;
     if (xQueueReceive(ledqueue, &newStateSet, portMAX_DELAY) != pdPASS) {
@@ -97,7 +101,7 @@ void ledUpdateTask(void *arg) {
     }
 
     if (level > 0 || desiredLevel > 0) {
-      zigbee::inhibit_sleep();
+      wakelock = zigbee::inhibit_sleep();
       // need to run setup again after sleeping?
       ledOutput->setup();
     }
@@ -115,12 +119,10 @@ void ledUpdateTask(void *arg) {
     level = desiredLevel;
 
     if (level == 0) {
-      zigbee::allow_sleep();
+      wakelock.reset();
     }
   }
 }
-
-adc::ADCSensor *batteryADC;
 
 float interp_linear(float value, std::vector<std::array<float, 3>> filter) {
   for (std::array<float, 3> f : filter) {
@@ -142,8 +144,24 @@ void batteryUpdateTask(void *arg) {
       {111.11111111111128f, -366.6666666666674f, NAN}};
 
   for (;;) {
-    batteryADC->setup();
-    float s = batteryADC->sample();
+    auto wakelock = zigbee::inhibit_sleep();
+    statusLed->turn_on();
+    esp32::ESP32InternalGPIOPin batterypin {};
+    batterypin.set_pin(GPIO_NUM_0);
+    batterypin.set_inverted(false);
+    batterypin.set_drive_strength(GPIO_DRIVE_CAP_2);
+    batterypin.set_flags(gpio::FLAG_INPUT);
+    batterypin.setup();
+    adc::ADCSensor batteryLevel {};
+    batteryLevel.set_pin(&batterypin);
+    batteryLevel.set_output_raw(false);
+    batteryLevel.set_sample_count(10);
+    batteryLevel.set_attenuation(adc::ADC_ATTEN_DB_12_COMPAT);
+    batteryLevel.set_channel1(::ADC1_CHANNEL_0);
+    batteryLevel.setup();
+
+    // 1/2 potential divider on the battery input
+    float s = batteryLevel.sample() * 2.0;
     auto r = interp_linear(s, filt);
 
     if (r > 100.0) {
@@ -158,6 +176,11 @@ void batteryUpdateTask(void *arg) {
 
     power_cfg_battery_remaining->set_attr(&value);
     adc_raw->set_attr(&s);
+
+
+    statusLed->turn_off();
+
+    wakelock.reset();
 
     vTaskDelay(pdMS_TO_TICKS(1000 * 60));
   }
@@ -208,20 +231,6 @@ extern "C" void app_main(void) {
 
   xTaskCreate(ledUpdateTask, "ledUpdate", 2048, NULL, 10, NULL);
 
-  auto batterypin = new esp32::ESP32InternalGPIOPin();
-  batterypin->set_pin(GPIO_NUM_0);
-  batterypin->set_inverted(false);
-  batterypin->set_drive_strength(GPIO_DRIVE_CAP_2);
-  batterypin->set_flags(gpio::FLAG_INPUT);
-  batterypin->setup();
-  auto batteryLevel = new adc::ADCSensor();
-  batteryLevel->set_pin(batterypin);
-  batteryLevel->set_output_raw(false);
-  batteryLevel->set_sample_count(10);
-  batteryLevel->set_attenuation(adc::ADC_ATTEN_DB_12_COMPAT);
-  batteryLevel->set_channel1(::ADC1_CHANNEL_0);
-  batteryLevel->setup();
-  batteryADC = batteryLevel;
 
   (new OnOffHandler(on_off_attr))->setup();
   // on_off_attr->add_on_value_callback([=](esp_zb_zcl_attr_t x) {

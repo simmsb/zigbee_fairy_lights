@@ -1,11 +1,16 @@
 #pragma once
 
+#include <esp_types.h>
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <tuple>
+#include <type_traits>
 
+#include "../opt/optional.hpp"
 #include "callbackmanager.h"
 #include "esp_zigbee_core.h"
 #include "ha/esp_zigbee_ha_standard.h"
@@ -46,6 +51,35 @@ template <class T> T get_value_by_type(uint8_t attr_type, void *data);
 
 class ZigBeeAttribute;
 
+class ZigbeeWakelock {
+  private:
+    bool live;
+    ZigbeeWakelock() : live(true) {}
+
+  public:
+    ZigbeeWakelock(ZigbeeWakelock const &) = delete;
+    ZigbeeWakelock& operator=(const ZigbeeWakelock&) = delete;
+
+    ZigbeeWakelock(ZigbeeWakelock &&other) noexcept {
+      // move constructor, old object becomes nonlive
+      live = other.live;
+      other.live = false;
+    }
+
+    ZigbeeWakelock &operator=(ZigbeeWakelock && other) noexcept {
+      // move assignment, old object takes liveness of moved into
+
+      std::swap(live, other.live);
+      return *this;
+    }
+
+    static ZigbeeWakelock unsafeCtor() { return ZigbeeWakelock(); }
+    ~ZigbeeWakelock();
+};
+
+static_assert(std::is_move_constructible_v<ZigbeeWakelock>, "ZigbeeWakelock must be move constructable");
+static_assert(std::is_move_assignable_v<ZigbeeWakelock>, "ZigbeeWakelock must be move assignable");
+
 class ZigBeeComponent {
 public:
   void setup();
@@ -85,16 +119,17 @@ public:
   bool is_started() { return this->started_; }
   bool connected = false;
 
-  void inhibit_sleep() { this->sleep_inhibited = true; }
-  void allow_sleep() { this->sleep_inhibited = false; }
+  void inhibit_sleep() { this->sleep_inhibited += 1; }
+  void allow_sleep() { this->sleep_inhibited -= 1; }
 
-  bool is_sleep_inhibited() { return this->sleep_inhibited; }
+  bool is_sleep_inhibited() { return this->sleep_inhibited > 0; }
+  uint8_t sleep_level() { return this->sleep_inhibited; }
 
   CallbackManager<void()> on_join_callback_{};
   std::deque<esp_zb_zcl_reporting_info_t> reporting_list;
 
 protected:
-  bool sleep_inhibited = false;
+  std::atomic<uint8_t> sleep_inhibited = 0;
   void esp_zb_task_();
   esp_zb_attribute_list_t *create_ident_cluster_();
   esp_zb_attribute_list_t *create_basic_cluster_();
@@ -141,6 +176,5 @@ void ZigBeeComponent::add_attr(ZigBeeAttribute *attr, uint8_t endpoint_id,
   this->attributes_[{endpoint_id, cluster_id, role, attr_id}] = attr;
 }
 
-void inhibit_sleep();
-void allow_sleep();
+tl::optional<ZigbeeWakelock> inhibit_sleep();
 } // namespace zigbee
